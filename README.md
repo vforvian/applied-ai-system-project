@@ -45,8 +45,8 @@ The system has two stages:
 1. **Clone the repo**
 
    ```bash
-   git clone https://github.com/vforvian/applied-ai-system-final.git
-   cd applied-ai-system-final
+   git clone https://github.com/vforvian/applied-ai-system-project.git
+   cd applied-ai-system-project
    ```
 
 2. **Create and activate a virtual environment**
