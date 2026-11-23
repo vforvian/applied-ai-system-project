@@ -1,6 +1,6 @@
 import csv
 from typing import List, Dict, Tuple, Optional
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 # Algorithm Recipe weights (see README "Algorithm Recipe").
 # Weight shift: energy doubled (2.0 -> 4.0), genre halved (2.0 -> 1.0).
@@ -51,13 +51,27 @@ class Recommender:
     def __init__(self, songs: List[Song]):
         self.songs = songs
 
+    @staticmethod
+    def _prefs(user: UserProfile) -> Dict:
+        return {
+            "genre": user.favorite_genre,
+            "mood": user.favorite_mood,
+            "energy": user.target_energy,
+            "likes_acoustic": user.likes_acoustic,
+        }
+
     def recommend(self, user: UserProfile, k: int = 5) -> List[Song]:
-        # TODO: Implement recommendation logic
-        return self.songs[:k]
+        """Return the top k songs, using the same scoring as recommend_songs."""
+        prefs = self._prefs(user)
+        ranked = sorted(
+            self.songs,
+            key=lambda song: (-score_song(prefs, asdict(song))[0], song.id),
+        )
+        return ranked[:k]
 
     def explain_recommendation(self, user: UserProfile, song: Song) -> str:
-        # TODO: Implement explanation logic
-        return "Explanation placeholder"
+        _, reasons = score_song(self._prefs(user), asdict(song))
+        return "; ".join(reasons) or "no strong matches"
 
 def load_songs(csv_path: str) -> List[Dict]:
     """Read songs.csv into dicts with numeric columns converted to numbers."""
