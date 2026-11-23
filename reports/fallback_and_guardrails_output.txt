@@ -1,0 +1,44 @@
+$ GEMINI_API_KEY= python -m src.main "mellow songs for studying on a rainy day"
+(No GEMINI_API_KEY found: running in rule-based fallback mode.)
+
+================================================================
+ Request: "mellow songs for studying on a rainy day"
+----------------------------------------------------------------
+ Mode: Rule-based fallback
+ Matched guide notes: mood:chill, genre:lofi, mood:relaxed
+ Retrieval score: 0.24
+ Note: AI unavailable (no API key); used rule-based ranking with profile {'mood': 'chill', 'genre': 'lofi', 'energy': 0.4}.
+----------------------------------------------------------------
+
+ 1. Midnight Coding  (LoRoom)   [song id 2]
+    lofi · chill · energy 0.42
+    Why: genre match: lofi (+1.0); mood match: chill (+1.5); energy 0.42 vs. target 0.40 (+3.92)
+
+ 2. Library Rain  (Paper Lanterns)   [song id 4]
+    lofi · chill · energy 0.35
+    Why: genre match: lofi (+1.0); mood match: chill (+1.5); energy 0.35 vs. target 0.40 (+3.80)
+
+ 3. Spacewalk Thoughts  (Orbit Bloom)   [song id 6]
+    ambient · chill · energy 0.28
+    Why: mood match: chill (+1.5); energy 0.28 vs. target 0.40 (+3.52)
+
+================================================================
+
+$ GEMINI_API_KEY= python -m src.main "   "
+(No GEMINI_API_KEY found: running in rule-based fallback mode.)
+
+================================================================
+ Request: "   "
+----------------------------------------------------------------
+ ⚠  Please describe the music you want, e.g. 'calm songs for studying'.
+================================================================
+
+$ GEMINI_API_KEY= python -m src.main "Gregorian chant with bagpipes"
+(No GEMINI_API_KEY found: running in rule-based fallback mode.)
+
+================================================================
+ Request: "Gregorian chant with bagpipes"
+----------------------------------------------------------------
+ ⚠  I couldn't find anything in the catalog that matches that request.
+================================================================
+

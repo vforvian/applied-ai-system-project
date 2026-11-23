@@ -1,0 +1,29 @@
+$ python -m src.evaluate --offline
+
+=== 1. RAG enhancement: songs only vs. songs + guides ===
+  Request                                       Songs only (best score)  Songs + guides (best score)
+  "mellow songs for studying on a rainy day"    FAIL (0.00)              PASS (0.24)                
+  "something relaxed and chill, kind of jazzy"  PASS (0.23)              PASS (0.20)                
+  "songs to get pumped up at the gym"           PASS (0.30)              PASS (0.24)                
+  "sad breakup songs"                           PASS (0.29)              PASS (0.31)                
+  "date night slow jams"                        FAIL (0.27)              PASS (0.17)                
+  "beach vacation vibes"                        FAIL (0.00)              PASS (0.22)                
+  "night drive through the city"                PASS (0.35)              PASS (0.30)                
+  "rnb"                                         PASS (0.30)              PASS (0.24)                
+Retrieval hit@3: songs only 5/8 -> songs + guides 8/8
+
+=== 2. Guardrails ===
+  Input                            Expected       Got            Result
+  ''                               invalid_input  invalid_input  PASS  
+  '   '                            invalid_input  invalid_input  PASS  
+  '1234 !!!'                       invalid_input  invalid_input  PASS  
+  'xxxxxxxxxxxx...'                invalid_input  invalid_input  PASS  
+  'Gregorian chant with bagpipes'  no_match       no_match       PASS  
+  'asdf qwerty'                    no_match       no_match       PASS  
+Guardrails: 6/6 passed
+
+=== SUMMARY ===
+ - Retrieval hit@3: songs only 5/8 -> songs + guides 8/8
+ - Guardrails: 6/6 passed
+
+Report saved to reports/eval_report_offline.md
