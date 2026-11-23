@@ -1,81 +1,67 @@
-%% TuneScout RAG — system architecture
+%% TuneScout RAG: system architecture
 %% Extends the Module 3 Music Recommender (src/recommender.py) with
-%% Retrieval-Augmented Generation over the song catalog + a music knowledge base.
+%% retrieval-augmented generation, an optional agent mode, and testing.
+%% Flow is top-to-bottom: request -> guardrails -> retrieval -> Gemini -> answer.
 
 flowchart TD
-    %% ---------- Input ----------
-    U([Listener]) -->|"natural-language request<br/>e.g. 'mellow songs for studying on a rainy day'"| APP[CLI App<br/>src/main.py]
+    U([Listener types a request<br/>e.g. 'mellow songs for studying'])
 
-    %% ---------- Indexing (runs once at startup) ----------
-    subgraph INDEX["① Indexing — runs once at startup"]
-        CSV[(data/songs.csv<br/>20 songs + audio features)] --> DOCS[Song Document Builder<br/>row → text description]
-        KB[(data/knowledge/<br/>genre & mood guides<br/>e.g. chill ≈ relaxed ≈ focused)] --> CHUNK[Knowledge Chunker]
-        DOCS --> EMB1[Embedder]
-        CHUNK --> EMB1
-        EMB1 --> VS[(Vector Index<br/>songs + guide chunks)]
+    subgraph SOURCES["① Knowledge sources (indexed at startup)"]
+        direction LR
+        CSV[(data/songs.csv<br/>20 songs)] --> IDX[(TF-IDF index)]
+        KB[(data/knowledge/<br/>mood & genre guides)] --> IDX
     end
 
-    %% ---------- Query-time RAG ----------
-    subgraph RAG["② RAG Pipeline — runs per request"]
-        APP --> VAL{Input Guardrail<br/>empty? too long?}
-        VAL -->|invalid| ERR[Friendly error message]
-        VAL -->|valid| EMB2[Embed request]
-        EMB2 --> RET[Retriever<br/>top-k songs + top-k guide chunks]
-        VS --> RET
-        RET --> THR{Relevance Guardrail<br/>best score ≥ threshold?}
-        THR -->|no| REFUSE["'No good match in the catalog'<br/>(LLM never called)"]
-        THR -->|yes| PROMPT[Prompt Builder<br/>request + retrieved songs + guide notes<br/>'only recommend songs listed here']
-        PROMPT --> LLM[LLM Generator]
-        LLM --> CHECK{Output Guardrail<br/>every song id exists<br/>in retrieved set?}
-        CHECK -->|hallucinated song| DROP[Remove invalid picks<br/>& log warning]
-        CHECK -->|valid| ANS[Recommendations<br/>+ why + cited song ids]
-        DROP --> ANS
-        LLM -->|API error after retries / no key| FALLBACK[Fallback: Module 3<br/>rule-based score_song ranking]
+    subgraph RAG["② RAG pipeline (default): src/rag.py"]
+        VAL{Input guardrail<br/>empty / too long?}
+        RET[Retriever<br/>match guides → expand query<br/>→ top 8 songs]
+        THR{Relevance guardrail<br/>score ≥ threshold?}
+        GEN[Gemini<br/>few-shot prompt with ONLY<br/>retrieved songs + guide notes]
+        OUTG{Output guardrail<br/>drop ids not retrieved}
+        VAL -->|ok| RET --> THR -->|yes| GEN --> OUTG
     end
 
-    %% ---------- Agent mode (--agent) ----------
-    subgraph AGENT["③ Agent mode (--agent): plan → act → check → retry"]
-        PLAN[Planner LLM<br/>search words, moods to avoid,<br/>energy range]
-        TOOLS[Tools: search_catalog,<br/>find_by_label, apply_constraints]
-        ACHECK{Plan check<br/>picks obey plan?}
-        PLAN --> TOOLS
-        ACHECK -->|"violation → feedback, retry once"| LLM
+    subgraph AGENT["③ Agent mode (--agent): src/agent.py"]
+        PLAN[Gemini planner<br/>moods to avoid, energy range]
+        TOOLS[Python tools<br/>search · lookup · constraints]
+        AGEN[Gemini recommender]
+        ACHK{Plan check}
+        PLAN --> TOOLS --> AGEN --> ACHK
+        ACHK -->|violation: retry once| AGEN
     end
+
+    U --> VAL
     VAL -->|--agent| PLAN
-    TOOLS -->|filtered candidates| PROMPT
-    LLM -.->|agent mode| ACHECK
-    ACHECK -->|ok| ANS
-    PLAN -.->|reasoning trace| TRACES[(reports/agent_traces.md<br/>logs/agent_traces.jsonl)]
+    IDX --> RET
+    IDX --> TOOLS
 
-    %% ---------- Output ----------
-    ANS --> APP
-    FALLBACK --> APP
-    REFUSE --> APP
-    ERR --> APP
-    APP -->|ranked songs with explanations| U
+    MSG[Helpful message<br/>LLM never called]
+    FB[Fallback: Module 3<br/>rule-based scorer]
+    ANS[Recommendations<br/>+ reasons + song ids]
+    VAL -->|invalid| MSG
+    THR -->|no| MSG
+    GEN -->|API error / no key| FB
+    OUTG --> ANS
+    ACHK -->|ok| ANS
+    FB --> ANS
 
-    %% ---------- Logging ----------
-    VAL -.-> LOG[(Logger<br/>logs/tunescout.log)]
-    RET -.->|request, retrieved ids, scores| LOG
-    CHECK -.->|answer, dropped ids| LOG
-    FALLBACK -.->|errors, fallback used| LOG
+    subgraph CHECKS["④ Human & testing checks"]
+        HUMAN[Human review<br/>listener checks cited songs<br/>edits songs / guides]
+        TESTS[pytest: 43 tests<br/>+ 4 known-limit xfails]
+        EVAL[Evaluation harness<br/>src/evaluate.py]
+        LOG[(Logs & agent traces<br/>reviewed by developer)]
+    end
 
-    %% ---------- Human & testing checks ----------
-    U -->|compares picks to cited songs<br/>& their features| HUMAN[Human Review]
-    HUMAN -.->|edits songs / guides| CSV
-    HUMAN -.-> KB
-    DEV([Developer]) -->|reviews logs| LOG
-    TESTS[Automated Tests<br/>pytest] -.->|verify doc builder, retrieval,<br/>guardrails, fallback, agent| RAG
-    EVAL[Evaluation Harness<br/>src/evaluate.py] -.->|predefined inputs →<br/>pass/fail report| RAG
-    EVAL -.-> AGENT
-    DEV -->|reads reports| EVAL
+    ANS --> HUMAN
+    TESTS -.->|verify guardrails,<br/>retrieval, agent| RAG
+    EVAL -.->|pass/fail reports| AGENT
+    RAG -.-> LOG
 
-    %% ---------- Styling ----------
     classDef human fill:#fde68a,stroke:#b45309,color:#000
     classDef guard fill:#fecaca,stroke:#b91c1c,color:#000
     classDef store fill:#bfdbfe,stroke:#1d4ed8,color:#000
     classDef legacy fill:#d1fae5,stroke:#047857,color:#000
-    class U,HUMAN,DEV human
-    class VAL,THR,CHECK,ACHECK guard
-    class CSV,KB,VS,LOG,TRACES store
-    class FALLBACK legacy
+    class U,HUMAN human
+    class VAL,THR,OUTG,ACHK guard
+    class CSV,KB,IDX,LOG store
+    class FB legacy
