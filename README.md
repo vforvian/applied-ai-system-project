@@ -1,583 +1,571 @@
-# 🎵 Music Recommender Simulation
+# 🎧 TuneScout RAG: Plain-Language Music Recommendations
 
-## Project Summary
+TuneScout RAG recommends songs from a small catalog based on a request you type in plain words, like *"mellow songs for studying on a rainy day."* It first looks up the songs and the genre/mood notes that best match your request. Then it asks an LLM (Google Gemini) to choose and explain recommendations **using only what it looked up**. Every pick cites a real song from the catalog, and the system checks the LLM's answer before showing it to you.
 
-In this project you will build and explain a small music recommender system.
-
-Your goal is to:
-
-- Represent songs and a user "taste profile" as data
-- Design a scoring rule that turns that data into recommendations
-- Evaluate what your system gets right and wrong
-- Reflect on how this mirrors real world AI recommenders
-
-Replace this paragraph with your own summary of what your version does.
+**Why it matters:** Recommenders often feel like black boxes, and LLMs can confidently make things up. TuneScout shows one way to get the friendliness of an LLM without giving up trust. The answers are grounded in real data, every pick is explained, invented songs are caught and removed, and the system still works without the LLM.
 
 ---
 
-## How The System Works
+## Original Project (Module 3): Music Recommender Simulation
 
-Real-world platforms like Spotify and YouTube blend two approaches. **Collaborative filtering** learns from the behavior of millions of users: likes, skips, replays, watch time, and which songs show up together on playlists. **Content-based filtering** looks at the songs themselves: audio features like tempo, energy, and valence, plus genre and mood tags. These systems first pull a few hundred candidates out of millions of items, then score and rank them, then adjust the final list for variety. My version is a small, purely content-based recommender, because the dataset has song attributes but no user behavior. It prioritizes **closeness to the user's taste, not extreme values**. Each song gets points for matching the user's favorite genre (+2.0, or +1.0 for a partial match like "indie pop" vs. "pop") and mood (+1.5), plus up to 2.0 points for how close its energy is to the user's target (`1 - |song.energy - target_energy|`) and up to 0.5 for matching their acoustic preference. A separate ranking step then sorts the scored songs and returns the top *k*, each with a short explanation of why it was chosen.
-
-### Data Flow Plan
-
-```
-INPUT                          PROCESS (the loop)                 OUTPUT (the ranking)
-─────                          ──────────────────                 ────────────────────
-User prefs                     for each of the 20 songs:          sort by score, high → low
-  genre, mood,          ──►      score_song(user, song)    ──►    (ties → lower song id)
-  target energy,                   + genre / mood points          keep the top k
-  likes_acoustic                   + energy closeness             return (song, score,
-                                   + acoustic fit                         explanation)
-data/songs.csv                     → (score, reasons)
-  └ load_songs()
-    (strings → numbers)
-```
-
-- **Input:** the user's taste profile, plus the catalog loaded from `data/songs.csv`. Numeric columns are converted from text to numbers once, when the file is loaded.
-- **Process:** every song is judged on its own by `score_song`, using the recipe below. Each rule that adds points also adds a short reason (e.g. "mood match"), so the explanation always matches the score.
-- **Output:** `recommend_songs` sorts all scored songs and returns the top *k*. The class version (`Recommender.recommend` / `explain_recommendation`) calls the same scoring logic, so both versions give the same results.
-
-### Algorithm Recipe (final)
-
-**Scoring rule (one song vs. one user):**
-
-| Signal | Points | Rule |
-|---|---|---|
-| Genre match | **+2.0** | `song.genre == user.genre` |
-| Partial genre match | **+1.0** | one genre contains the other (e.g. "indie pop" / "pop"), only if no exact match |
-| Mood match | **+1.5** | `song.mood == user.mood` |
-| Energy closeness | **0 to +2.0** | `2.0 * (1 - abs(song.energy - user.target_energy))` |
-| Acoustic preference | **+0.5** | song is acoustic (`acousticness >= 0.5`) and the user likes acoustic, or song is not acoustic and the user doesn't |
-
-Maximum possible score: **6.0**.
-
-**Ranking rule (whole catalog):** score every song, sort from highest to lowest score (ties broken by song id), and return the top *k* with their reasons.
-
-**Why these weights:**
-- **Genre is the strongest single signal (2.0)**, but it's rare in this catalog: 20 songs cover 17 genres, so only lofi (3 songs) and pop / indie pop (3) ever produce more than one match. Genre picks out the first few results, and mood and energy order everything after them.
-- **Mood (1.5) is close to genre, not half of it.** With the starter weight of +1.0, a "sad, low-energy metal" listener got *Iron Tide* (angry, 0.97 energy) as their #1 just because of the genre label. With 1.5, *Last Bus Home* (sad, 0.33 energy) ranks first, which fits the request for something sad and quiet.
-- **Energy can be worth as much as a genre match (2.0)**, so it doesn't just break ties. A song 0.5 away from the target loses 1.0 point, which is enough to push a high-energy song below a calm one.
-- **Acoustic (0.5) is a small nudge** that separates songs that are otherwise similar (e.g. *Library Rain* vs. *Midnight Coding*).
-- Valence, tempo, and danceability are left out for now. They're candidates for the "add tempo or valence" experiment.
-
-### Potential Biases
-
-- **Genre can still win over a better fit.** A genre match (+2.0) can lift a song whose mood and energy are wrong. For a "happy pop" listener, *Gym Hero* (an intense workout track) ranks #3 mostly because it's labeled pop.
-- **Exact-word matching misses similar moods.** "Chill", "relaxed", and "focused" count as completely different moods, so *Coffee Shop Stories* (relaxed jazz) gets no mood credit from a chill listener even though it fits.
-- **The catalog favors some listeners.** Lofi and pop/indie pop have 3 songs each; the other 14 genres have just 1. Fans of those genres get one strong match and then a list sorted almost entirely by energy.
-- **Very high- or low-energy songs are at a disadvantage.** Energy is scored by distance from the target, so mid-energy songs are never far from anyone. Songs at the extremes, like *Iron Tide* (0.97) or *Rain on Glass Harbor* (0.22), drop sharply for most users.
-- **One genre and one mood per user.** The profile can't express "lofi *or* jazz" or a mood that changes with the time of day.
-- **No variety check.** Nothing stops the top *k* from being near-copies of each other (e.g. two LoRoom lofi tracks).
-
-Some prompts to answer:
-
-- What features does each `Song` use in your system
-  - For example: genre, mood, energy, tempo
-- What information does your `UserProfile` store
-- How does your `Recommender` compute a score for each song
-- How do you choose which songs to recommend
-
-You can include a simple diagram or bullet list if helpful.
+This project extends my **Music Recommender Simulation** ([original repo](https://github.com/vforvian/ai110-module3show-musicrecommendersimulation-starter)). The original was a rule-based, content-based recommender called **TuneScout 1.0**. It scored each of 20 songs against a fixed taste profile (genre, mood, target energy, and acoustic preference) using weighted points, and returned the top 5 with a "Why" list for each pick. It worked, but users had to type exact labels and numbers, and it treated similar moods like "chill" and "relaxed" as completely unrelated.
 
 ---
 
-## Getting Started
+## Architecture Overview
 
-### Setup
+![System architecture](assets/architecture.png)
 
-1. Create a virtual environment (optional but recommended):
+> Diagram source: [`diagrams/architecture.mmd`](diagrams/architecture.mmd)
+
+The system has two stages:
+
+1. **Indexing (runs once at startup).** Each row of `data/songs.csv` becomes a short text description of the song (genre, mood, energy, tempo, and so on). The genre/mood guides in `data/knowledge/` are split into chunks. Everything is indexed with **TF-IDF**, so the retriever can search it.
+2. **RAG pipeline (runs for every request).**
+   - An **input guardrail** rejects empty or overly long requests.
+   - The **retriever** finds the top-matching songs and guide notes.
+   - A **relevance guardrail** stops the pipeline if nothing matches well. The app then says so honestly instead of guessing.
+   - The **prompt builder** gives Gemini the request plus *only* the retrieved songs and notes, and tells it to recommend from that list.
+   - An **output guardrail** checks that every recommended song ID exists in the retrieved set and removes any invented song.
+   - If Gemini is unavailable (no API key, network error), the app **falls back to the original Module 3 rule-based ranking**, so it never crashes.
+
+**Logging:** every step is logged to `logs/tunescout.log`: the request, the retrieved IDs and their scores, any picks that were removed, and whether the fallback was used.
+
+**Human and testing checks:**
+- Users can verify each pick against the cited song's features.
+- Developers review the logs.
+- `pytest` covers the document builder, retrieval, guardrails, and fallback.
+
+---
+
+## Setup Instructions
+
+**Requirements:** Python 3.10+ and a free [Google Gemini API key](https://aistudio.google.com/apikey). The app still runs without a key, but uses the rule-based fallback.
+
+1. **Clone the repo**
+
+   ```bash
+   git clone https://github.com/vforvian/applied-ai-system-final.git
+   cd applied-ai-system-final
+   ```
+
+2. **Create and activate a virtual environment**
 
    ```bash
    python -m venv .venv
-   source .venv/bin/activate      # Mac or Linux
+   source .venv/bin/activate      # Mac / Linux
    .venv\Scripts\activate         # Windows
+   ```
 
-2. Install dependencies
+3. **Install dependencies**
 
-```bash
-pip install -r requirements.txt
-```
+   ```bash
+   python -m pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
 
-3. Run the app:
+   Upgrading pip first matters. An older pip may try to build `cryptography` from source and fail.
 
-```bash
-python -m src.main
-```
+4. **Add your API key.** Copy the example file and paste your key into `.env`:
 
-### Running Tests
+   ```bash
+   cp .env.example .env
+   # then edit .env:  GEMINI_API_KEY=your-key-here
+   ```
 
-Run the starter tests with:
+   `.env` is listed in `.gitignore`, so your key is never committed.
 
-```bash
-pytest
-```
+5. **Run the app**
 
-You can add more tests in `tests/test_recommender.py`.
+   ```bash
+   python -m src.main "mellow songs for studying on a rainy day"
+   ```
+
+   - `python -m src.main` with no request starts an interactive prompt.
+   - `-k 5` returns 5 songs instead of 3.
+   - `python -m src.main --legacy` runs the original Module 3 demo.
+   - `python -m src.main --agent --trace "NOT sad, something happy"` uses the plan → act → check agent and prints its reasoning trace.
+
+6. **Run the tests**
+
+   ```bash
+   pytest -rx      # -rx also lists the known-limitation (xfail) tests
+   ```
+
+7. **Run the evaluation harness** (optional)
+
+   ```bash
+   python -m src.evaluate --offline       # retrieval + guardrails, no API calls
+   python -m src.evaluate --only style    # baseline vs. specialized prompt (16 calls)
+   python -m src.evaluate --only agent    # plain RAG vs. agent on hard cases (9 calls)
+   ```
+
+   Reports are written to `reports/`. Free-tier Gemini keys allow about **20 requests per model per day**, so run the live sections separately. You can also point a section at another model, e.g. `GEMINI_MODEL=gemini-3.5-flash-lite`.
 
 ---
 
-## Sample Recommendation Output
+## Execution Evidence
 
-Paste a sample of your recommender's output here as a text block so a reader can see what it produces:
+Everything below is copied from real runs. Nothing is mocked up. The committed `.txt` logs in [`reports/`](reports/) are the raw terminal output.
+
+| What is being shown | Where |
+|---|---|
+| **End-to-end runs** (command → input → AI output) | [Sample Interactions](#sample-interactions), Examples 1, 2 and 4 (live Gemini) |
+| **AI feature behavior** | RAG: Examples 1–2 show the matched guide notes and grounded reasons. Agent: Example 5 shows the full reasoning trace. |
+| **Guardrails** | Example 3 (no match) and [Guardrail runs](#guardrail-and-fallback-runs) below (empty input, no match, no API key) |
+| **Reliability / evaluation** | [Test suite output](#test-suite-output), [Evaluation harness output](#evaluation-harness-output), and the [Testing Summary](#testing-summary) tables |
+| **Logging** | [Log excerpt](#log-excerpt) below |
+
+### Test suite output
+
+Full log: [`reports/pytest_output.txt`](reports/pytest_output.txt)
 
 ```
-# e.g.:
-# User profile: genre=indie, mood=chill, energy=low
-# Recommendations:
-#   1. ...
-#   2. ...
-#   3. ...
+$ pytest -q -rx
+.........................................xxxx..                          [100%]
+=========================== short test summary info ============================
+XFAIL tests/test_rag.py::test_negation_is_understood - TF-IDF ignores negation: 'NOT sad' still matches sad songs
+XFAIL tests/test_rag.py::test_reasonable_requests_outside_guide_vocabulary[something to fall asleep to] - Words missing from songs + guides get no match (e.g. 'asleep', 'funeral')
+XFAIL tests/test_rag.py::test_reasonable_requests_outside_guide_vocabulary[music for a funeral] - Words missing from songs + guides get no match (e.g. 'asleep', 'funeral')
+XFAIL tests/test_rag.py::test_artist_similarity_request - Catalog has no real artists, so artist-similarity requests can't match
+======================== 43 passed, 4 xfailed in 0.48s =========================
 ```
 
+### Evaluation harness output
+
+Full log: [`reports/evaluate_offline_output.txt`](reports/evaluate_offline_output.txt). Live sections: [`reports/eval_report_style.md`](reports/eval_report_style.md), [`reports/eval_report_agent.md`](reports/eval_report_agent.md).
+
+```
+$ python -m src.evaluate --offline
+
+=== 1. RAG enhancement: songs only vs. songs + guides ===
+  Request                                       Songs only (best score)  Songs + guides (best score)
+  "mellow songs for studying on a rainy day"    FAIL (0.00)              PASS (0.24)
+  "something relaxed and chill, kind of jazzy"  PASS (0.23)              PASS (0.20)
+  "songs to get pumped up at the gym"           PASS (0.30)              PASS (0.24)
+  "sad breakup songs"                           PASS (0.29)              PASS (0.31)
+  "date night slow jams"                        FAIL (0.27)              PASS (0.17)
+  "beach vacation vibes"                        FAIL (0.00)              PASS (0.22)
+  "night drive through the city"                PASS (0.35)              PASS (0.30)
+  "rnb"                                         PASS (0.30)              PASS (0.24)
+Retrieval hit@3: songs only 5/8 -> songs + guides 8/8
+
+=== 2. Guardrails ===
+  Input                            Expected       Got            Result
+  ''                               invalid_input  invalid_input  PASS
+  '   '                            invalid_input  invalid_input  PASS
+  '1234 !!!'                       invalid_input  invalid_input  PASS
+  'xxxxxxxxxxxx...'                invalid_input  invalid_input  PASS
+  'Gregorian chant with bagpipes'  no_match       no_match       PASS
+  'asdf qwerty'                    no_match       no_match       PASS
+Guardrails: 6/6 passed
+```
+
+```
+$ GEMINI_MODEL=gemini-3.5-flash-lite python -m src.evaluate --only style
+=== 3. Specialization: baseline prompt vs. few-shot house style ===
+  Prompt       #1 pick correct  Avg words/reason  <=20 words  Quotes a number  No hype words  Echoes request  Avg confidence
+  baseline     7/8              18.9              71%         18%              65%            82%             0.92
+  specialized  7/8              14.4              100%        100%             100%           100%            0.92
+
+$ GEMINI_MODEL=gemini-3.1-flash-lite python -m src.evaluate --only agent
+=== 4. Agent: plain RAG vs. plan/act/check agent ===
+  Hard request                   Plain RAG                           Agent
+  "NOT sad, something happy"     PASS: Sunrise City, Rooftop Lights  PASS: Sunrise City, Rooftop Lights, Fuego Lento
+  "something to fall asleep to"  FAIL: no_match                      PASS: Rain on Glass Harbor, Spacewalk Thoughts
+  "music for a funeral"          FAIL: no_match                      FAIL: Rain on Glass Harbor, Last Bus Home, Library Rain
+Hard cases: plain RAG 1/3 -> agent 2/3
+```
+
+### Guardrail and fallback runs
+
+Full log: [`reports/fallback_and_guardrails_output.txt`](reports/fallback_and_guardrails_output.txt). This run has the API key removed on purpose, to show the system still works without Gemini. The output below is trimmed; the full text is in the log.
+
+```
+$ GEMINI_API_KEY= python -m src.main "mellow songs for studying on a rainy day"
+(No GEMINI_API_KEY found: running in rule-based fallback mode.)
 ================================================================
-                      Top 5 recommendations                     
-================================================================
- Profile: genre=pop, mood=happy, energy=0.8
+ Request: "mellow songs for studying on a rainy day"
 ----------------------------------------------------------------
-
- 1. Sunrise City  (Neon Echo)
-    Score: 5.46 / 6.0  [##################..]
-    pop · happy · energy 0.82
-    Why:
-      • genre match: pop (+2.0)
-      • mood match: happy (+1.5)
-      • energy 0.82 vs. target 0.80 (+1.96)
-
- 2. Rooftop Lights  (Indigo Parade)
-    Score: 4.42 / 6.0  [###############.....]
-    indie pop · happy · energy 0.76
-    Why:
-      • similar genre: indie pop (+1.0)
-      • mood match: happy (+1.5)
-      • energy 0.76 vs. target 0.80 (+1.92)
-
- 3. Gym Hero  (Max Pulse)
-    Score: 3.74 / 6.0  [############........]
-    pop · intense · energy 0.93
-    Why:
-      • genre match: pop (+2.0)
-      • energy 0.93 vs. target 0.80 (+1.74)
-
- 4. Concrete Crown  (Kilo Verse)
-    Score: 1.96 / 6.0  [#######.............]
-    hip-hop · confident · energy 0.78
-    Why:
-      • energy 0.78 vs. target 0.80 (+1.96)
-
- 5. Fuego Lento  (Los Faroles)
-    Score: 1.92 / 6.0  [######..............]
-    latin · playful · energy 0.84
-    Why:
-      • energy 0.84 vs. target 0.80 (+1.92)
-
-================================================================
-
-
->>> [CORE] High-Energy Pop
-
-================================================================
-                      Top 5 recommendations                     
-================================================================
- Profile: genre=pop, mood=happy, energy=0.85, likes_acoustic=False
+ Mode: Rule-based fallback
+ Matched guide notes: mood:chill, genre:lofi, mood:relaxed
+ Retrieval score: 0.24
+ Note: AI unavailable (no API key); used rule-based ranking with profile {'mood': 'chill', 'genre': 'lofi', 'energy': 0.4}.
 ----------------------------------------------------------------
-
- 1. Sunrise City  (Neon Echo)
-    Score: 5.94 / 6.0  [####################]
-    pop · happy · energy 0.82
-    Why:
-      • genre match: pop (+2.0)
-      • mood match: happy (+1.5)
-      • energy 0.82 vs. target 0.85 (+1.94)
-      • non-acoustic sound fits your taste (+0.5)
-
- 2. Rooftop Lights  (Indigo Parade)
-    Score: 4.82 / 6.0  [################....]
-    indie pop · happy · energy 0.76
-    Why:
-      • similar genre: indie pop (+1.0)
-      • mood match: happy (+1.5)
-      • energy 0.76 vs. target 0.85 (+1.82)
-      • non-acoustic sound fits your taste (+0.5)
-
- 3. Gym Hero  (Max Pulse)
-    Score: 4.34 / 6.0  [##############......]
-    pop · intense · energy 0.93
-    Why:
-      • genre match: pop (+2.0)
-      • energy 0.93 vs. target 0.85 (+1.84)
-      • non-acoustic sound fits your taste (+0.5)
-
- 4. Storm Runner  (Voltline)
-    Score: 2.38 / 6.0  [########............]
-    rock · intense · energy 0.91
-    Why:
-      • energy 0.91 vs. target 0.85 (+1.88)
-      • non-acoustic sound fits your taste (+0.5)
-
- 5. Concrete Crown  (Kilo Verse)
-    Score: 2.36 / 6.0  [########............]
-    hip-hop · confident · energy 0.78
-    Why:
-      • energy 0.78 vs. target 0.85 (+1.86)
-      • non-acoustic sound fits your taste (+0.5)
-
-================================================================
-
-
->>> [CORE] Chill Lofi
-
-================================================================
-                      Top 5 recommendations                     
-================================================================
- Profile: genre=lofi, mood=chill, energy=0.35, likes_acoustic=True
-----------------------------------------------------------------
-
- 1. Library Rain  (Paper Lanterns)
-    Score: 6.00 / 6.0  [####################]
-    lofi · chill · energy 0.35
-    Why:
-      • genre match: lofi (+2.0)
-      • mood match: chill (+1.5)
-      • energy 0.35 vs. target 0.35 (+2.00)
-      • acoustic sound fits your taste (+0.5)
-
- 2. Midnight Coding  (LoRoom)
-    Score: 5.86 / 6.0  [####################]
+ 1. Midnight Coding  (LoRoom)   [song id 2]
     lofi · chill · energy 0.42
-    Why:
-      • genre match: lofi (+2.0)
-      • mood match: chill (+1.5)
-      • energy 0.42 vs. target 0.35 (+1.86)
-      • acoustic sound fits your taste (+0.5)
+    Why: genre match: lofi (+1.0); mood match: chill (+1.5); energy 0.42 vs. target 0.40 (+3.92)
+ 2. Library Rain  (Paper Lanterns)   [song id 4]
+ 3. Spacewalk Thoughts  (Orbit Bloom)   [song id 6]
+================================================================
 
- 3. Focus Flow  (LoRoom)
-    Score: 4.40 / 6.0  [###############.....]
+$ GEMINI_API_KEY= python -m src.main "   "
+ Request: "   "
+ ⚠  Please describe the music you want, e.g. 'calm songs for studying'.
+
+$ GEMINI_API_KEY= python -m src.main "Gregorian chant with bagpipes"
+ Request: "Gregorian chant with bagpipes"
+ ⚠  I couldn't find anything in the catalog that matches that request.
+```
+
+### Log excerpt
+
+From `logs/tunescout.log`. This file is git-ignored, so the excerpt is copied here. Long lines are shortened with `…`. It shows a successful answer, each guardrail, and real Gemini outages being retried and then handled by the fallback:
+
+```
+INFO    src.rag: Request 'mellow songs for studying on a rainy day' | guides=[('mood:chill', 0.36), ('genre:lofi', 0.252), ('mood:relaxed', 0.213)] | songs=[(9, 0.236), (2, 0.212), (7, 0.209), (4, 0.197), …]
+INFO    src.rag: Answer: ids=[4, 9, 2] confidence=0.95 dropped=[]
+INFO    src.rag: Rejected request '   ': Please describe the music you want, e.g. 'calm songs for studying'.
+INFO    src.rag: No match (best score 0.000 < 0.08)
+WARNING src.rag: Fallback used: no API key | profile={'mood': 'chill', 'genre': 'lofi', 'energy': 0.4}
+WARNING src.llm: Gemini attempt 1/3 failed (model=gemini-3.8-flash): 503 UNAVAILABLE. … high demand …
+WARNING src.llm: Gemini attempt 2/3 failed (model=gemini-3.8-flash): 503 UNAVAILABLE. …
+WARNING src.llm: Gemini attempt 3/3 failed (model=gemini-3.8-flash): 503 UNAVAILABLE. …
+WARNING src.rag: Fallback used: Gemini request failed (503) | profile={'mood': 'chill', 'genre': 'lofi', 'energy': 0.4}
+```
+
+---
+
+## Sample Interactions
+
+These are real outputs, recorded with `gemini-3.5-flash`. Gemini's wording varies a little from run to run.
+
+**Example 1: A normal request.** The mood guide maps "mellow" and "studying" to *chill* and *lofi*.
+
+```
+$ python -m src.main "mellow songs for studying on a rainy day"
+
+================================================================
+ Request: "mellow songs for studying on a rainy day"
+----------------------------------------------------------------
+ Mode: AI (Gemini + retrieval)
+ Matched guide notes: mood:chill, genre:lofi, mood:relaxed
+ Retrieval score: 0.24   AI confidence: 0.95
+----------------------------------------------------------------
+
+ 1. Library Rain  (Paper Lanterns)   [song id 4]
+    lofi · chill · energy 0.35
+    Why: This lo-fi track features a chill mood, low energy (0.35), and a slow 72 BPM tempo, making it a perfectly cozy backdrop for studying on a rainy day.
+
+ 2. Focus Flow  (LoRoom)   [song id 9]
     lofi · focused · energy 0.40
-    Why:
-      • genre match: lofi (+2.0)
-      • energy 0.40 vs. target 0.35 (+1.90)
-      • acoustic sound fits your taste (+0.5)
+    Why: Designed for a focused mood with lo-fi beats, low energy (0.40), and an organic acoustic sound, this track helps maintain study flow.
 
- 4. Spacewalk Thoughts  (Orbit Bloom)
-    Score: 3.86 / 6.0  [#############.......]
-    ambient · chill · energy 0.28
-    Why:
-      • mood match: chill (+1.5)
-      • energy 0.28 vs. target 0.35 (+1.86)
-      • acoustic sound fits your taste (+0.5)
-
- 5. Coffee Shop Stories  (Slow Stereo)
-    Score: 2.46 / 6.0  [########............]
-    jazz · relaxed · energy 0.37
-    Why:
-      • energy 0.37 vs. target 0.35 (+1.96)
-      • acoustic sound fits your taste (+0.5)
-
-================================================================
-
-
->>> [CORE] Deep Intense Rock
-
-================================================================
-                      Top 5 recommendations                     
-================================================================
- Profile: genre=rock, mood=intense, energy=0.92, likes_acoustic=False
-----------------------------------------------------------------
-
- 1. Storm Runner  (Voltline)
-    Score: 5.98 / 6.0  [####################]
-    rock · intense · energy 0.91
-    Why:
-      • genre match: rock (+2.0)
-      • mood match: intense (+1.5)
-      • energy 0.91 vs. target 0.92 (+1.98)
-      • non-acoustic sound fits your taste (+0.5)
-
- 2. Gym Hero  (Max Pulse)
-    Score: 3.98 / 6.0  [#############.......]
-    pop · intense · energy 0.93
-    Why:
-      • mood match: intense (+1.5)
-      • energy 0.93 vs. target 0.92 (+1.98)
-      • non-acoustic sound fits your taste (+0.5)
-
- 3. Neon Cathedral  (Pulse Theory)
-    Score: 2.44 / 6.0  [########............]
-    edm · euphoric · energy 0.95
-    Why:
-      • energy 0.95 vs. target 0.92 (+1.94)
-      • non-acoustic sound fits your taste (+0.5)
-
- 4. Iron Tide  (Black Meridian)
-    Score: 2.40 / 6.0  [########............]
-    metal · angry · energy 0.97
-    Why:
-      • energy 0.97 vs. target 0.92 (+1.90)
-      • non-acoustic sound fits your taste (+0.5)
-
- 5. Sunrise City  (Neon Echo)
-    Score: 2.30 / 6.0  [########............]
-    pop · happy · energy 0.82
-    Why:
-      • energy 0.82 vs. target 0.92 (+1.80)
-      • non-acoustic sound fits your taste (+0.5)
-
-================================================================
-
-
->>> [ADVERSARIAL] Conflicted: Sad but Hyped
-
-================================================================
-                      Top 5 recommendations                     
-================================================================
- Profile: genre=blues, mood=sad, energy=0.9
-----------------------------------------------------------------
-
- 1. Last Bus Home  (Delta June)
-    Score: 4.36 / 6.0  [###############.....]
-    blues · sad · energy 0.33
-    Why:
-      • genre match: blues (+2.0)
-      • mood match: sad (+1.5)
-      • energy 0.33 vs. target 0.90 (+0.86)
-
- 2. Storm Runner  (Voltline)
-    Score: 1.98 / 6.0  [#######.............]
-    rock · intense · energy 0.91
-    Why:
-      • energy 0.91 vs. target 0.90 (+1.98)
-
- 3. Gym Hero  (Max Pulse)
-    Score: 1.94 / 6.0  [######..............]
-    pop · intense · energy 0.93
-    Why:
-      • energy 0.93 vs. target 0.90 (+1.94)
-
- 4. Neon Cathedral  (Pulse Theory)
-    Score: 1.90 / 6.0  [######..............]
-    edm · euphoric · energy 0.95
-    Why:
-      • energy 0.95 vs. target 0.90 (+1.90)
-
- 5. Fuego Lento  (Los Faroles)
-    Score: 1.88 / 6.0  [######..............]
-    latin · playful · energy 0.84
-    Why:
-      • energy 0.84 vs. target 0.90 (+1.88)
-
-================================================================
-
-
->>> [ADVERSARIAL] Unknown Genre (k-pop)
-
-================================================================
-                      Top 5 recommendations                     
-================================================================
- Profile: genre=k-pop, mood=happy, energy=0.8
-----------------------------------------------------------------
-
- 1. Sunrise City  (Neon Echo)
-    Score: 4.46 / 6.0  [###############.....]
-    pop · happy · energy 0.82
-    Why:
-      • similar genre: pop (+1.0)
-      • mood match: happy (+1.5)
-      • energy 0.82 vs. target 0.80 (+1.96)
-
- 2. Rooftop Lights  (Indigo Parade)
-    Score: 3.42 / 6.0  [###########.........]
-    indie pop · happy · energy 0.76
-    Why:
-      • mood match: happy (+1.5)
-      • energy 0.76 vs. target 0.80 (+1.92)
-
- 3. Gym Hero  (Max Pulse)
-    Score: 2.74 / 6.0  [#########...........]
-    pop · intense · energy 0.93
-    Why:
-      • similar genre: pop (+1.0)
-      • energy 0.93 vs. target 0.80 (+1.74)
-
- 4. Concrete Crown  (Kilo Verse)
-    Score: 1.96 / 6.0  [#######.............]
-    hip-hop · confident · energy 0.78
-    Why:
-      • energy 0.78 vs. target 0.80 (+1.96)
-
- 5. Fuego Lento  (Los Faroles)
-    Score: 1.92 / 6.0  [######..............]
-    latin · playful · energy 0.84
-    Why:
-      • energy 0.84 vs. target 0.80 (+1.92)
-
-================================================================
-
-
->>> [ADVERSARIAL] Out-of-Range Energy (1.5)
-
-================================================================
-                      Top 5 recommendations                     
-================================================================
- Profile: genre=edm, mood=euphoric, energy=1.5
-----------------------------------------------------------------
-
- 1. Neon Cathedral  (Pulse Theory)
-    Score: 4.40 / 6.0  [###############.....]
-    edm · euphoric · energy 0.95
-    Why:
-      • genre match: edm (+2.0)
-      • mood match: euphoric (+1.5)
-      • energy 0.95 vs. target 1.50 (+0.90)
-
- 2. Iron Tide  (Black Meridian)
-    Score: 0.94 / 6.0  [###.................]
-    metal · angry · energy 0.97
-    Why:
-      • energy 0.97 vs. target 1.50 (+0.94)
-
- 3. Gym Hero  (Max Pulse)
-    Score: 0.86 / 6.0  [###.................]
-    pop · intense · energy 0.93
-    Why:
-      • energy 0.93 vs. target 1.50 (+0.86)
-
- 4. Storm Runner  (Voltline)
-    Score: 0.82 / 6.0  [###.................]
-    rock · intense · energy 0.91
-    Why:
-      • energy 0.91 vs. target 1.50 (+0.82)
-
- 5. Fuego Lento  (Los Faroles)
-    Score: 0.68 / 6.0  [##..................]
-    latin · playful · energy 0.84
-    Why:
-      • energy 0.84 vs. target 1.50 (+0.68)
-
-================================================================
-
-
->>> [ADVERSARIAL] Stringly-Typed Acoustic
-
-================================================================
-                      Top 5 recommendations                     
-================================================================
- Profile: genre=metal, energy=0.9, likes_acoustic=False
-----------------------------------------------------------------
-
- 1. Iron Tide  (Black Meridian)
-    Score: 3.86 / 6.0  [#############.......]
-    metal · angry · energy 0.97
-    Why:
-      • genre match: metal (+2.0)
-      • energy 0.97 vs. target 0.90 (+1.86)
-
- 2. Fuego Lento  (Los Faroles)
-    Score: 2.38 / 6.0  [########............]
-    latin · playful · energy 0.84
-    Why:
-      • energy 0.84 vs. target 0.90 (+1.88)
-      • acoustic sound fits your taste (+0.5)
-
- 3. Storm Runner  (Voltline)
-    Score: 1.98 / 6.0  [#######.............]
-    rock · intense · energy 0.91
-    Why:
-      • energy 0.91 vs. target 0.90 (+1.98)
-
- 4. Gym Hero  (Max Pulse)
-    Score: 1.94 / 6.0  [######..............]
-    pop · intense · energy 0.93
-    Why:
-      • energy 0.93 vs. target 0.90 (+1.94)
-
- 5. Neon Cathedral  (Pulse Theory)
-    Score: 1.90 / 6.0  [######..............]
-    edm · euphoric · energy 0.95
-    Why:
-      • energy 0.95 vs. target 0.90 (+1.90)
-
-================================================================
-
-
->>> [ADVERSARIAL] Empty Profile
-
-================================================================
-                      Top 5 recommendations                     
-================================================================
- Profile: 
-----------------------------------------------------------------
-
- 1. Sunrise City  (Neon Echo)
-    Score: 0.00 / 6.0  [....................]
-    pop · happy · energy 0.82
-    Why:
-      • no strong matches
-
- 2. Midnight Coding  (LoRoom)
-    Score: 0.00 / 6.0  [....................]
+ 3. Midnight Coding  (LoRoom)   [song id 2]
     lofi · chill · energy 0.42
-    Why:
-      • no strong matches
+    Why: A mellow lo-fi song with a chill mood, slow tempo (78 BPM), and soft organic instrumentation ideal for background study music.
 
- 3. Storm Runner  (Voltline)
-    Score: 0.00 / 6.0  [....................]
-    rock · intense · energy 0.91
-    Why:
-      • no strong matches
-
- 4. Library Rain  (Paper Lanterns)
-    Score: 0.00 / 6.0  [....................]
-    lofi · chill · energy 0.35
-    Why:
-      • no strong matches
-
- 5. Gym Hero  (Max Pulse)
-    Score: 0.00 / 6.0  [....................]
-    pop · intense · energy 0.93
-    Why:
-      • no strong matches
+ Here are three mellow lo-fi tracks with slow tempos and low energy, perfect for staying focused on a rainy day.
 
 ================================================================
+```
 
-**Screenshot or video** *(optional)*: <!-- Insert a screenshot or demo video link here -->
+**Example 2: A similar-mood request (the case Module 3 got wrong).** Module 3 gave *Coffee Shop Stories* no mood credit, because "relaxed" ≠ "chill". Now it ranks #1.
+
+```
+$ python -m src.main "something relaxed and chill, kind of jazzy"
+
+================================================================
+ Request: "something relaxed and chill, kind of jazzy"
+----------------------------------------------------------------
+ Mode: AI (Gemini + retrieval)
+ Matched guide notes: mood:chill, mood:relaxed, mood:carefree
+ Retrieval score: 0.20   AI confidence: 0.95
+----------------------------------------------------------------
+
+ 1. Coffee Shop Stories  (Slow Stereo)   [song id 7]
+    jazz · relaxed · energy 0.37
+    Why: It is a jazz track with a relaxed mood, low energy, and soft acoustic sound that perfectly matches your request for something relaxed and jazzy.
+
+ 2. Midnight Coding  (LoRoom)   [song id 2]
+    lofi · chill · energy 0.42
+    Why: This song features a chill mood with low energy and a calm, soft lo-fi acoustic sound for a laid-back feel.
+
+ 3. Library Rain  (Paper Lanterns)   [song id 4]
+    lofi · chill · energy 0.35
+    Why: With a chill mood, slow tempo, and quiet acoustic sound, this lo-fi track offers a soothing, relaxed atmosphere.
+
+ Here are the best relaxed and chill tracks featuring smooth jazz and cozy lo-fi vibes.
+
+================================================================
+```
+
+**Example 3: The relevance guardrail (no good match in the catalog).** Gemini is never called, so it has no chance to invent an answer.
+
+```
+$ python -m src.main "Gregorian chant with bagpipes"
+
+================================================================
+ Request: "Gregorian chant with bagpipes"
+----------------------------------------------------------------
+ ⚠  I couldn't find anything in the catalog that matches that request.
+================================================================
+```
+
+**Example 4: Gemini fixes a retrieval mistake.** TF-IDF can't handle "NOT", so the top retrieved songs were sad. Gemini read the request, skipped those songs, and picked the happy songs from the candidate list.
+
+```
+$ python -m src.main "NOT sad, something happy"
+ Mode: AI (Gemini + retrieval)
+ Matched guide notes: genre:blues, mood:melancholic, mood:sad
+ Retrieval score: 0.30   AI confidence: 0.95
+
+ 1. Sunrise City  (Neon Echo)   [song id 1]
+    pop · happy · energy 0.82
+    Why: It features an explicitly happy mood, high energy, fast tempo, and a bright, positive feel perfect for turning around a sad mood.
+
+ 2. Rooftop Lights  (Indigo Parade)   [song id 10]
+    indie pop · happy · energy 0.76
+    Why: It offers a happy mood with high energy, upbeat danceability, and a bright, positive vibe.
+```
+
+**Example 5: Agent mode with its reasoning trace.** The planner turns "NOT sad" into an avoid list and an energy range. The tools remove two songs that break the plan before Gemini sees them, and the check step confirms that no pick breaks the plan.
+
+```
+$ python -m src.main --agent --trace "NOT sad, something happy"
+
+--- agent trace ---
+1. [request] {"text": "NOT sad, something happy"}
+2. [plan] {"search_query": "happy upbeat cheerful positive", "moods": ["happy", "carefree", "euphoric", "playful"], "genres": [], "avoid_moods": ["sad", "melancholic", "dark", "moody"], "energy_min": 0.5, "energy_max": 1.0, "reasoning": "The listener explicitly requested happy music and rejected sad tones. ..."}
+3. [tool: search_catalog] {"input": "happy upbeat cheerful positive", "output": [[1, "Sunrise City", 0.26], [10, "Rooftop Lights", 0.24], [19, "Island Time Radio", 0.23], [18, "Fuego Lento", 0.22], [5, "Gym Hero", 0.19], [15, "Neon Cathedral", 0.19], [6, "Spacewalk Thoughts", 0.12], [7, "Coffee Shop Stories", 0.12]], "guides": ["mood:happy"]}
+4. [tool: find_by_label] {"input": {"moods": ["happy", "carefree", "euphoric", "playful"], "genres": []}, "output": [[1, "Sunrise City"], [10, "Rooftop Lights"], [15, "Neon Cathedral"], [18, "Fuego Lento"], [19, "Island Time Radio"]]}
+5. [tool: apply_constraints] {"removed_ids": [6, 7], "kept": [[1, "Sunrise City"], [10, "Rooftop Lights"], [19, "Island Time Radio"], [18, "Fuego Lento"], [5, "Gym Hero"], [15, "Neon Cathedral"]]}
+6. [recommend] {"attempt": 1, "picks": [[1, "Sunrise City"], [10, "Rooftop Lights"], [18, "Fuego Lento"]], "confidence": 0.95, "dropped_ids": []}
+7. [check] {"attempt": 1, "violations": "none"}
+8. [answer] {"ids": [1, 10, 18]}
+
+================================================================
+ Request: "NOT sad, something happy"
+----------------------------------------------------------------
+ Mode: AI (Gemini + retrieval)
+ Matched guide notes: mood:happy
+ Retrieval score: 0.26   AI confidence: 0.95
+----------------------------------------------------------------
+
+ 1. Sunrise City  (Neon Echo)   [song id 1]
+    pop · happy · energy 0.82
+    Why: Happy pop track featuring 0.82 energy and 118 BPM to keep things bright and upbeat.
+
+ 2. Rooftop Lights  (Indigo Parade)   [song id 10]
+    indie pop · happy · energy 0.76
+    Why: Bright indie pop with a happy mood, 0.76 energy, and 124 BPM tempo.
+
+ 3. Fuego Lento  (Los Faroles)   [song id 18]
+    latin · playful · energy 0.84
+    Why: Playful latin song with 0.84 energy and 104 BPM offers a happy feel.
+
+ Here are bright, upbeat tracks to lift your mood.
+
+================================================================
+```
+
+**Fallback mode (no API key, or Gemini down).** The same request is ranked by the Module 3 scorer, using a profile built from the retrieved guides:
+
+```
+ Mode: Rule-based fallback
+ Note: AI unavailable (no API key); used rule-based ranking with profile {'mood': 'chill', 'genre': 'lofi', 'energy': 0.4}.
+ 1. Midnight Coding  (LoRoom)   [song id 2]
+    Why: genre match: lofi (+1.0); mood match: chill (+1.5); energy 0.42 vs. target 0.40 (+3.92)
+```
 
 ---
 
-## Experiments You Tried
+## Design Decisions
 
-Use this section to document the experiments you ran. For example:
-
-- What happened when you changed the weight on genre from 2.0 to 0.5
-- What happened when you added tempo or valence to the score
-- How did your system behave for different types of users
+| Decision | Why | Trade-off |
+|---|---|---|
+| **RAG instead of letting the LLM recommend freely** | Gemini can only recommend songs that actually exist in the catalog, and every pick cites a song ID. | Recommendations are limited to the 20-song catalog. |
+| **TF-IDF retrieval (scikit-learn) instead of embeddings** | Free, runs offline, needs no second API key, and gives the **same results every run**, which makes testing reproducible. | It matches words, not meaning. The genre/mood guides make up for this by linking similar words (e.g. "chill ≈ relaxed ≈ focused"). |
+| **Songs turned into text documents** | Lets one retriever search both song data and written guides. | Numbers like energy 0.35 are turned into words ("low energy"), which loses some precision. |
+| **Three guardrails (input, relevance, output)** | Each one targets a different failure: bad input, no real match, or an invented song. | More code paths to test, and the relevance threshold had to be tuned by hand. |
+| **Module 3 scorer kept as a fallback** | The app still works with no key or no network, and the original project stays part of the system. | Fallback answers are less flexible: they need structured preferences, not plain language. |
+| **Google Gemini** | Has a free tier and is fast enough for a CLI app. | Depends on an external service, and output wording can vary between runs. |
 
 ---
 
-## Limitations and Risks
+## Testing Summary
 
-Summarize some limitations of your recommender.
+**Result: 43 of 43 tests pass, plus 4 known-limitation tests that are expected to fail** (`pytest -rx`). Retrieval found an expected song in the top 3 for **8 of 8** benchmark requests. With live Gemini, the **#1 pick was an expected song for 8 of 8 requests**, with **0 invented songs** and an **average confidence of 0.92**. All three guardrails caught every failure I forced: invented songs, broken JSON, API errors, and empty or nonsense input. Retrieval struggles with **negation** ("NOT sad") and with **words that aren't in the guides** ("fall asleep", "funeral"). Gemini fixed the negation case on its own (see Example 4).
 
-Examples:
+### How reliability is measured
 
-- It only works on a tiny catalog
-- It does not understand lyrics or language
-- It might over favor one genre or mood
+| Method | What it checks | Where |
+|---|---|---|
+| **Automated tests** (47 total) | Document building, retrieval quality, all 3 guardrails, prompt grounding, fallback | `tests/test_rag.py`, `tests/test_agent.py`, `tests/test_recommender.py` |
+| **Fake LLM in tests** | Forces Gemini failures (invented IDs, bad JSON, errors) offline and deterministically | `FakeGenerator` in `tests/test_rag.py` |
+| **Confidence scoring** | Gemini rates its confidence (0–1) in each answer, shown next to the TF-IDF retrieval score | `RecommendationResult.confidence`, CLI output |
+| **Logging & error handling** | Every request, retrieved IDs and scores, dropped picks, and fallback reasons | `logs/tunescout.log` |
 
-You will go deeper on this in your model card.
+### Retrieval benchmark (golden set)
+
+Each request should return at least one expected song in the top 3 retrieved results.
+
+| Request | Expected song(s) | Top 3 retrieved | Result |
+|---|---|---|---|
+| "mellow songs for studying on a rainy day" | Library Rain, Midnight Coding, Focus Flow | Focus Flow, Midnight Coding, Coffee Shop Stories | ✅ Pass |
+| "something relaxed and chill, kind of jazzy" | Coffee Shop Stories | Coffee Shop Stories, Midnight Coding, Library Rain | ✅ Pass |
+| "songs to get pumped up at the gym" | Gym Hero, Storm Runner | Gym Hero, Storm Runner, Sunrise City | ✅ Pass |
+| "sad breakup songs" | Last Bus Home | Last Bus Home, Rain on Glass Harbor, Underground Static | ✅ Pass |
+| "date night slow jams" | Velvet Hours | Velvet Hours, Night Drive Loop, Underground Static | ✅ Pass |
+| "beach vacation vibes" | Island Time Radio | Island Time Radio, Coffee Shop Stories, Sunrise City | ✅ Pass |
+| "night drive through the city" | Night Drive Loop | Night Drive Loop, Sunrise City, Velvet Hours | ✅ Pass |
+| "rnb" | Velvet Hours | Velvet Hours, Concrete Crown, Last Bus Home | ✅ Pass |
+
+### Live Gemini run (`gemini-3.5-flash`, baseline prompt, same 8 requests)
+
+| Request | Gemini's picks | #1 pick expected? | Confidence | Invented songs removed |
+|---|---|---|---|---|
+| "mellow songs for studying on a rainy day" | Library Rain, Focus Flow, Midnight Coding | ✅ | 0.95 | 0 |
+| "something relaxed and chill, kind of jazzy" | Coffee Shop Stories, Midnight Coding, Library Rain | ✅ | 0.95 | 0 |
+| "songs to get pumped up at the gym" | Gym Hero, Storm Runner, Neon Cathedral | ✅ | 0.95 | 0 |
+| "sad breakup songs" | Last Bus Home, Rain on Glass Harbor | ✅ | 0.85 | 0 |
+| "date night slow jams" | Velvet Hours | ✅ | 0.95 | 0 |
+| "beach vacation vibes" | Island Time Radio, Fuego Lento, Sunrise City | ✅ | 0.95 | 0 |
+| "night drive through the city" | Night Drive Loop, Underground Static, Velvet Hours | ✅ | 0.95 | 0 |
+| "rnb" | Velvet Hours, Concrete Crown | ✅ | 0.85 | 0 |
+
+Gemini returned **fewer than 3 picks** when the remaining candidates didn't fit; for example, "date night" got only Velvet Hours. Prompt rule 4 asks for this. Its confidence was lower (0.85) on two of the requests where it returned fewer than 3 picks. That suggests the confidence score tracks how many good matches the catalog actually has.
+
+### Guardrail and failure tests
+
+| Test input | Evaluation criteria | Result |
+|---|---|---|
+| Empty, whitespace, `None`, "1234 !!!", 301 characters | Rejected with a helpful message; LLM never called | ✅ Pass |
+| "Gregorian chant with bagpipes", "asdf qwerty" | "No match" message; LLM never called | ✅ Pass |
+| LLM returns song ID 999 (doesn't exist) | ID 999 removed, real picks kept | ✅ Pass |
+| LLM returns Iron Tide for a calm request (real song, not retrieved) | Removed, because only retrieved songs are allowed | ✅ Pass |
+| LLM returns only invented songs, bad JSON, a JSON list, or an API error | Falls back to Module 3 ranking with 3 real songs | ✅ Pass |
+| No `GEMINI_API_KEY` | Fallback mode; "mellow studying" returns only lofi, ambient or jazz | ✅ Pass |
+| LLM confidence of 1.7 | Clamped to 1.0 | ✅ Pass |
+| "chill" (the Module 3 bug) | Mood guide expands to "relaxed" and finds Coffee Shop Stories | ✅ Pass |
+| "NOT sad, something happy" | Top song shouldn't be sad | ❌ Fail (expected): Last Bus Home ranks #1 |
+| "something to fall asleep to", "music for a funeral" | Should find calm or sad songs | ❌ Fail (expected): "no match" |
+| "songs like Taylor Swift" | Should find similar songs | ❌ Fail (expected): the catalog has no real artists |
+
+### What I learned from testing
+
+- **A probe found a bug that tests written to pass would have missed.** The word "songs" matched the pop guide's "sing-along songs", which pulled pop into "sad breakup songs". Adding music-specific stop words (`songs`, `music`, `vibes`, …) fixed it.
+- **Writing down failing tests is more honest than leaving them out.** The 4 `xfail` tests document real limits of keyword retrieval (negation and vocabulary gaps). If a later change fixes one, `strict=True` makes the test fail, so the fix gets noticed.
+- **A fake LLM made the guardrails testable.** Real Gemini almost never invents a song ID on purpose, so the only reliable way to prove the output guardrail works is to force that failure.
+- **The fallback and retries were tested against real outages, not just fakes.** During the live run, `gemini-2.5-flash` returned **404 (retired)** and `gemini-3.8-flash` returned **503 (overloaded)** three times in a row. Both times the app logged the error and returned rule-based picks instead of crashing. I then made the model configurable (`GEMINI_MODEL`) and switched the default to `gemini-3.5-flash`.
+
+---
+
+## Stretch Features
+
+All four optional features build on the RAG pipeline. Every number below comes from the evaluation harness ([`src/evaluate.py`](src/evaluate.py)). Its reports are committed in [`reports/`](reports/).
+
+### 1. RAG enhancement: a second data source (custom mood & genre guides)
+
+Retrieval uses **two sources**: the song catalog (`data/songs.csv`) and 33 hand-written mood and genre guides (`data/knowledge/`). The guides do two jobs:
+- **Expand the request:** "mellow" also searches for *chill, relaxed, low energy*.
+- **Give Gemini context:** the guide notes go into the prompt, so it can interpret the request.
+
+**Before/after** (`TuneScoutRAG(use_guides=False)` vs. `True`). A request counts as a pass only if it isn't rejected as "no match":
+
+| Request | Songs only (best score) | Songs + guides (best score) |
+|---|---|---|
+| "mellow songs for studying on a rainy day" | ❌ no match (0.00) | ✅ Focus Flow, Midnight Coding… (0.24) |
+| "something relaxed and chill, kind of jazzy" | ✅ (0.23) | ✅ (0.20) |
+| "songs to get pumped up at the gym" | ✅ (0.30) | ✅ (0.24) |
+| "sad breakup songs" | ✅ (0.29) | ✅ (0.31) |
+| "date night slow jams" | ❌ Night Drive Loop, no r&b (0.27) | ✅ Velvet Hours (0.17) |
+| "beach vacation vibes" | ❌ no match (0.00) | ✅ Island Time Radio (0.22) |
+| "night drive through the city" | ✅ (0.35) | ✅ (0.30) |
+| "rnb" | ✅ (0.30) | ✅ (0.24) |
+
+**Retrieval hit@3: 5/8 → 8/8.** Without the guides, the words "mellow", "studying", "beach" and "date night" don't appear in any song, so retrieval fails or finds the wrong songs. The guides connect those everyday words to catalog labels. They also feed Gemini the context it uses in its reasons: for example, "rainy day" → *chill*.
+
+### 2. Specialization: a few-shot "house style" prompt
+
+The specialized prompt adds four style rules and **two example answers**. The examples use requests and songs that aren't in the evaluation set, so the model can't just copy them. The rules:
+- At most 20 words.
+- Quote an exact energy or BPM number.
+- Echo a word from the request.
+- No hype words.
+
+Measured on the 8 golden requests (`python -m src.evaluate --only style`, `gemini-3.5-flash-lite`):
+
+| Prompt | #1 pick correct | Avg words / reason | ≤ 20 words | Quotes a number | No hype words | Echoes request | Avg confidence |
+|---|---|---|---|---|---|---|---|
+| Baseline | 7/8 | 18.9 | 71% | 18% | 65% | 82% | 0.92 |
+| **Specialized (few-shot)** | **7/8** | **14.4** | **100%** | **100%** | **100%** | **100%** | 0.92 |
+
+The output is measurably different: reasons are shorter, every reason quotes a real number from the catalog, and there are no "perfect"/"ideal" filler words. Accuracy is unchanged. Here are two reasons for the same song (*Sunrise City*) on the same request ("NOT sad, something happy"), both from `gemini-3.5-flash`:
+- **Baseline (24 words, hype word, no numbers):** *"It features an explicitly happy mood, high energy, fast tempo, and a bright, positive feel perfect for turning around a sad mood."*
+- **Specialized (14 words, quotes 0.82 and 118 BPM):** *"Happy pop track featuring 0.82 energy and 118 BPM to keep things bright and upbeat."*
+
+The specialized style is the default. `TuneScoutRAG(style="baseline")` turns it off.
+
+### 3. Agentic workflow: plan → act → recommend → check → retry
+
+`python -m src.main --agent --trace "<request>"` runs [`src/agent.py`](src/agent.py), which works in five steps:
+1. **Plan:** Gemini writes a search plan: search words, moods to look for, moods to **avoid**, and an **energy range**.
+2. **Act:** Python tools carry it out: `search_catalog`, `find_by_label`, and `apply_constraints`.
+3. **Recommend:** Gemini picks from the remaining candidates only.
+4. **Check:** Python checks every pick against the plan.
+5. **Retry:** if a pick breaks the plan, Gemini gets feedback and tries once more.
+
+On the hard cases that plain retrieval gets wrong (`--only agent`, `gemini-3.1-flash-lite`):
+
+| Hard request | Rule | Plain RAG | Agent |
+|---|---|---|---|
+| "NOT sad, something happy" | no sad/melancholic picks | ✅ | ✅ |
+| "something to fall asleep to" | all energy < 0.45 | ❌ no match | ✅ Rain on Glass Harbor, Spacewalk Thoughts |
+| "music for a funeral" | energy < 0.5 and valence < 0.6 | ❌ no match | ❌ third pick had valence 0.60 |
+
+**Plain RAG 1/3 → Agent 2/3.** The plan format can express moods and energy but not "not upbeat" (valence), which is why "funeral" still fails. The reasoning traces are in [`ai_interactions.md`](ai_interactions.md) and [`reports/agent_traces.md`](reports/agent_traces.md).
+
+### 4. Test harness: `python -m src.evaluate`
+
+One command runs the system on the predefined inputs in [`src/eval_cases.py`](src/eval_cases.py) and prints pass/fail tables plus a summary. The four sections are the three comparisons above and a guardrail check. Example summary:
+
+```
+=== SUMMARY ===
+ - Retrieval hit@3: songs only 5/8 -> songs + guides 8/8
+ - Guardrails: 6/6 passed
+ - Live sections use model: gemini-3.5-flash-lite
+ - Style: reasons quoting a number 18% -> 100%, <=20 words 71% -> 100%, no hype words 65% -> 100%; #1 pick correct 7/8 -> 7/8
+```
+
+**A lesson the harness taught me:** my first full run hit Gemini's free-tier limit (20 requests/day per model) partway through. The run reported fallback answers as if they were Gemini's, which made the specialized prompt look like it scored 0/8. I changed the harness so requests that fall back are marked **SKIPPED**, the report gets a warning, and each live section can run on its own.
 
 ---
 
 ## Reflection
 
-Read and complete `model_card.md`:
+This project taught me that a trustworthy AI system has more to do with the structure around the model than with the model itself. Gemini alone could have written confident, friendly recommendations for songs that don't exist. Making it retrieve first, limiting it to what it retrieved, and checking its answer afterward is what made those recommendations worth trusting. I also learned that a passing test suite doesn't mean the system works. My worst bug, the word "songs" pulling pop music into a sad request, only showed up when I tried requests I hadn't planned for, and the real Gemini outages tested my fallback better than any of my fake failures did. For problem-solving, the biggest change for me was treating failures as something to write down, not hide. Adding tests that are expected to fail for the cases my system can't handle made its limits clear, and it showed me what to improve next.
 
-[**Model Card**](model_card.md)
+> The full responsible-AI reflection (limitations, misuse, AI collaboration) is in the [model card](model_card.md).
 
-Write 1 to 2 paragraphs here about what you learned:
+---
 
-- about how recommenders turn data into predictions
-- about where bias or unfairness could show up in systems like this
+## Project Structure
 
-
-
+```
+├── assets/              # architecture diagram PNG
+├── data/
+│   ├── songs.csv        # 20-song catalog
+│   └── knowledge/       # genre & mood guides used for retrieval
+├── diagrams/
+│   └── architecture.mmd # Mermaid source for the system diagram
+├── logs/                # runtime logs (git-ignored)
+├── src/
+│   ├── main.py          # CLI entry point + logging setup
+│   ├── rag.py           # retrieval, prompt (+ few-shot style), guardrails, fallback
+│   ├── agent.py         # plan -> act -> check -> retry agent
+│   ├── evaluate.py      # evaluation harness
+│   ├── eval_cases.py    # predefined inputs shared by tests + harness
+│   ├── llm.py           # Gemini wrapper (retries, configurable model)
+│   └── recommender.py   # Module 3 rule-based scorer (used as fallback)
+├── reports/             # harness reports + agent reasoning traces
+├── tests/
+│   ├── test_rag.py          # RAG reliability tests
+│   ├── test_agent.py        # agent chain, constraints, retry
+│   └── test_recommender.py  # original Module 3 tests
+├── ai_interactions.md   # agent reasoning traces (stretch feature)
+├── .env.example         # copy to .env and add GEMINI_API_KEY
+├── model_card.md        # responsible-AI reflection & limitations
+├── pytest.ini
+└── requirements.txt
+```
